@@ -3,35 +3,63 @@ import { View, Text, TextInput, Image, ScrollView, StyleSheet, TouchableOpacity,
 import Icon from 'react-native-vector-icons/Ionicons';
 import { Picker } from '@react-native-picker/picker';
 import { obtenerRecetasLanding } from '../../services/recetaService';
+import { obtenerFavoritos, agregarFavorito, eliminarFavorito } from '../../services/favoritosService';
+
 
 const ProductosScreen = ({ navigation }) => {
     const [error, setError] = useState(null);
     const [isFavoriteFilter, setIsFavoriteFilter] = useState(false);
     const [selectedOption, setSelectedOption] = useState('todo');
     const [recetas, setRecetas] = useState([]);
+    const [favoritos, setFavoritos] = useState([]);
+    const [searchText, setSearchText] = useState('');
 
-    
     useEffect(() => {
-        const cargarRecetas = async () => {
+        const cargarDatos = async () => {
             try {
-                console.log("entre")
-                const data = await obtenerRecetasLanding();
-                setRecetas(data);
+                const [recetasData, favoritosData] = await Promise.all([
+                    obtenerRecetasLanding(),
+                    //obtenerFavoritos() 
+                ]);
+                setRecetas(recetasData);
+                //setFavoritos(favoritosData.map(fav => fav.id));
             } catch (err) {
                 setError(err.message);
-                console.log(err.message)
+                console.log(err.message);
             }
         };
 
-        cargarRecetas();
+        cargarDatos();
     }, []);
 
-    const toggleFavorite = (id) => {
-        const updatedCervezas = recetas.map(receta =>
-            receta.id === id ? { ...receta, isFavorite: !receta.isFavorite } : receta
-        );
-        setRecetas(updatedCervezas);
+    const toggleFavorite = async (id) => {
+        if (favoritos.includes(id)) {
+            // Si ya es favorito, eliminar de favoritos
+            await eliminarFavorito(id);
+            setFavoritos(favoritos.filter(favId => favId !== id)); // Remover de la lista de favoritos
+        } else {
+            // Si no es favorito, agregar a favoritos
+            await agregarFavorito(id);
+            setFavoritos([...favoritos, id]); // Añadir a la lista de favoritos
+        }
     };
+
+    const addToCart = (id) => {
+        console.log(`Agregando receta con ID: ${id} al carrito`);
+        // Aquí podrías implementar la lógica para agregar al carrito
+    };
+
+    const filteredRecetas = recetas.filter(receta =>
+        receta.nombre.toLowerCase().includes(searchText.toLowerCase()) ||
+        receta.especificaciones.toLowerCase().includes(searchText.toLowerCase())
+    ).filter(receta => {
+        // Si el filtro de favoritos está activado, filtrar solo las recetas que están en favoritos
+        if (isFavoriteFilter) {
+            return favoritos.includes(receta.id);
+        }
+        return true; // Si no está activado, mostrar todas las recetas
+    });
+
 
     return (
         <View style={styles.container}>
@@ -43,6 +71,8 @@ const ProductosScreen = ({ navigation }) => {
                         <TextInput
                             style={styles.searchInput}
                             placeholder="Busqueda..."
+                            value={searchText}
+                            onChangeText={text => setSearchText(text)}
                         />
                     </View>
 
@@ -69,9 +99,8 @@ const ProductosScreen = ({ navigation }) => {
                         </Picker>
                     </View>
 
-                    
                     <View style={styles.containerCard}>
-                        {recetas.map((receta) => (
+                        {filteredRecetas.map((receta) => (
                             <ImageBackground
                                 key={receta.id}
                                 source={{ uri: receta.rutaFondo }}
@@ -80,38 +109,48 @@ const ProductosScreen = ({ navigation }) => {
                             >
                                 <View style={styles.header}>
                                     <Text style={styles.precio}>${receta.precioPaquete1.toFixed(2)}</Text>
-                                    <TouchableOpacity onPress={() => toggleFavorite(cerveza.id)}>
+                                    <TouchableOpacity onPress={() => toggleFavorite(receta.id)}>
                                         <Icon
-                                            name={receta.isFavorite ? 'heart' : 'heart-outline'}
+                                            name={favoritos.includes(receta.id) ? 'heart' : 'heart-outline'}
                                             size={24}
-                                            color={receta.isFavorite ? 'red' : '#000'}
+                                            color={favoritos.includes(receta.id) ? 'red' : '#000'}
                                         />
                                     </TouchableOpacity>
                                 </View>
 
                                 <Image
-                                    source={{ uri: receta.imagen }} 
+                                    source={{ uri: receta.imagen }}
                                     style={styles.imagen}
                                     resizeMode="contain"
                                 />
 
-                                <Text style={styles.stock}>¡AGOTADO!</Text>
+                                {receta.stock <= 0 ? (
+                                    <Text style={styles.agotado}>¡AGOTADO!</Text>
+                                ) : (
+                                    <Text style={styles.disponible}>¡DISPONIBLE!</Text>
+                                )}
 
                                 <View style={styles.footer}>
                                     <Text style={styles.nombre}>{receta.nombre}</Text>
                                     <Text style={styles.especificaciones}>{receta.especificaciones}</Text>
-                                    
+
                                     <TouchableOpacity
-                                        style={styles.addButton}
+                                        style={[
+                                            styles.addButton,
+                                            receta.stock <= 0 ? styles.disabledButton : null // Aplica un estilo diferente si está deshabilitado
+                                        ]}
                                         onPress={() => addToCart(receta.id)}
+                                        disabled={receta.stock <= 0} // Deshabilita el botón si el stock es 0 o menos
                                     >
-                                        <Text style={styles.addButtonText}>Agregar al carrito</Text>
+                                        <Text style={receta.stock <= 0 ? styles.disabledButtonText : styles.addButtonText}>
+                                            Agregar al carrito
+                                        </Text>
                                     </TouchableOpacity>
+
                                 </View>
                             </ImageBackground>
                         ))}
                     </View>
-
 
                 </View>
             </ScrollView>
@@ -165,8 +204,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 8,
     },
-    addButton: {
+    disabledButton: {
         backgroundColor: '#e0e0e0',
+        paddingVertical: 5,
+        paddingHorizontal: 10,
+        borderRadius: 5
+    },
+    addButton: {
+        backgroundColor: '#6e2400',
         paddingVertical: 5,
         paddingHorizontal: 10,
         borderRadius: 5
@@ -179,7 +224,7 @@ const styles = StyleSheet.create({
     footer: {
         height: 110,
         width: '100%',
-        justifyContent: 'space-between', 
+        justifyContent: 'space-between',
         alignItems: 'center',
         paddingBottom: 10,
         backgroundColor: '#eae9e8',
@@ -188,11 +233,24 @@ const styles = StyleSheet.create({
         color: '#E1A500',
         fontWeight: 'bold',
     },
-    stock: {
+    agotado: {
         position: 'absolute',
         width: 80,
         textAlign: 'center',
         backgroundColor: '#e72929',
+        color: 'white',
+        fontSize: 12,
+        fontWeight: 'bold',
+        padding: 4,
+        transform: [{ rotate: '-35deg' }],
+        top: 50,
+        left: 10
+    },
+    disponible: {
+        position: 'absolute',
+        width: 90,
+        textAlign: 'center',
+        backgroundColor: 'rgb(41, 231, 62)',
         color: 'white',
         fontSize: 12,
         fontWeight: 'bold',
